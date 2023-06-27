@@ -1,0 +1,134 @@
+name: livebook-snap
+base: core22
+version: 'v0.10.0-dev'
+summary: Automate code & data workflows with interactive Elixir notebooks
+description: |
+  Livebook is a web application for writing interactive and collaborative code notebooks.
+source-code: https://github.com/FelixPe/livebook
+website: https://livebook.dev
+license: Apache-2.0
+architectures:
+  - build-on: amd64
+  - build-on: arm64
+  - build-on: armhf
+  - build-on: ppc64el
+  - build-on: s390x
+grade: stable
+confinement: strict
+
+
+apps:
+  livebook-server:
+    daemon: simple
+    restart-condition: always
+    restart-delay: 10s
+    command: usr/lib/livebook/bin/livebook start
+    stop-command: usr/lib/livebook/bin/livebook stop
+    plugs: [home, network, network-bind]
+
+parts:
+  livebook:
+    after:
+      - elixir
+      - erlang
+    plugin: nil
+    build-snaps:
+      - node/18/stable
+    source: .
+      # build-packages:
+      #- curl
+      #- python3-simplejson
+      #- rsync
+      #- unzip
+      #- xmlto
+      #- xsltproc
+      #- zip
+    stage-packages:
+      - adduser
+      - coreutils
+      - git
+      - curl
+    override-build: |
+      set -e -u -x
+      echo "Starting to build livebook at $(date)"
+      START_TIME=$(date +%s)
+      export MIX_ENV=prod
+      mkdir -p "${SNAPCRAFT_STAGE}"/usr/lib/ "${SNAPCRAFT_PART_INSTALL}"/usr/lib/
+      mix local.hex --force && mix local.rebar --force && mix setup && mix release livebook && cp -r _build/prod/rel/livebook "${SNAPCRAFT_STAGE}"/usr/lib/ && cp -r _build/prod/rel/livebook "${SNAPCRAFT_PART_INSTALL}"/usr/lib/
+      echo "Finished building livebook at $(date)"
+      END_TIME=$(date +%s)
+      echo "Total time: $((${END_TIME} - ${START_TIME})) seconds"
+    stage:
+      - usr/lib/*
+    prime:
+      - usr/lib/*
+
+  elixir:
+    after:
+      - erlang
+    plugin: make
+    source: https://github.com/elixir-lang/elixir.git
+    source-tag: v1.15.0
+    source-depth: 1
+    make-parameters:
+      #      - test
+      - PREFIX=/usr
+    override-build: |
+      echo "Starting to build elixir at $(date)"
+      START_TIME=$(date +%s)
+      snapcraftctl build
+      echo "Finished building elixir at $(date)"
+      END_TIME=$(date +%s)
+      echo "Total time: $((${END_TIME} - ${START_TIME})) seconds"
+    stage:
+      - usr
+
+  erlang:
+    plugin: autotools
+    source: https://github.com/erlang/otp.git
+    source-tag: OTP-25.3.2.2
+    source-depth: 1
+    build-packages:
+      - fop
+      - libssl-dev
+      - libncurses5-dev
+      - libwxbase3.0-dev
+      - libxml2-utils
+      - xsltproc
+    stage-packages:
+      - openssl
+      - ncurses-base
+      - libncurses5
+      - libtinfo5
+    autotools-configure-parameters:
+      - --prefix=/usr
+    override-build: |
+      echo "Starting to build erlang at $(date)"
+      START_TIME=$(date +%s)
+
+      ./otp_build autoconf
+      snapcraftctl build
+
+      sed --in-place \
+        --expression 's:^\(\s*ROOTDIR\)="/usr/.*":\1=$(readlink --canonicalize $(dirname $0)/../lib/erlang):' \
+        ${SNAPCRAFT_PART_INSTALL}/usr/bin/erl
+      sed --in-place \
+        --expression 's:^\(\s*ROOTDIR\)="/usr/.*":\1=$(readlink --canonicalize $(dirname $0)/../..):' \
+        ${SNAPCRAFT_PART_INSTALL}/usr/lib/erlang/erts-*/bin/start
+      sed --in-place \
+        --expression 's:^\(\s*ROOTDIR\)="/usr/.*":\1=$(readlink --canonicalize $(dirname $0)/../..):' \
+        ${SNAPCRAFT_PART_INSTALL}/usr/lib/erlang/erts-*/bin/erl
+      sed --in-place \
+        --expression 's:^\(\s*ROOTDIR\)="/usr/.*":\1=$(readlink --canonicalize $(dirname $0)/..):' \
+        ${SNAPCRAFT_PART_INSTALL}/usr/lib/erlang/bin/start
+      sed --in-place \
+        --expression 's:^\(\s*ROOTDIR\)="/usr/.*":\1=$(readlink --canonicalize $(dirname $0)/..):' \
+        ${SNAPCRAFT_PART_INSTALL}/usr/lib/erlang/bin/erl
+
+      echo "Finished building erlang at $(date)"
+      END_TIME=$(date +%s)
+      echo "Total time: $((${END_TIME} - ${START_TIME})) seconds"
+    stage:
+      - etc
+      - lib
+      - usr
